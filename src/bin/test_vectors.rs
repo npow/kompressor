@@ -68,7 +68,16 @@ fn load_cases(path: &str) -> Vec<Case> {
         let offsets = read_i32_vec(&buf, &mut pos);
         let py_bytes = read_bytes(&buf, &mut pos);
         let py_decoded_symbols = read_i32_vec(&buf, &mut pos);
-        cases.push(Case { name, symbols, indexes, cdfs, cdf_lengths, offsets, py_bytes, py_decoded_symbols });
+        cases.push(Case {
+            name,
+            symbols,
+            indexes,
+            cdfs,
+            cdf_lengths,
+            offsets,
+            py_bytes,
+            py_decoded_symbols,
+        });
     }
     cases
 }
@@ -82,14 +91,24 @@ fn main() {
         let mut ok = true;
 
         // 1. INTEROP DECODE: can Rust decode bytes that Python actually produced?
-        let rust_decoded = decode_with_indexes(&c.py_bytes, &c.indexes, &c.cdfs, &c.cdf_lengths, &c.offsets);
+        let rust_decoded =
+            decode_with_indexes(&c.py_bytes, &c.indexes, &c.cdfs, &c.cdf_lengths, &c.offsets);
         if rust_decoded == c.symbols {
             println!("  [PASS] rust decode(python bytes) == original symbols");
         } else {
             println!("  [FAIL] rust decode(python bytes) != original symbols");
-            let mismatches: Vec<(usize, i32, i32)> = rust_decoded.iter().zip(c.symbols.iter()).enumerate()
-                .filter(|(_, (a, b))| a != b).map(|(i, (a, b))| (i, *a, *b)).take(5).collect();
-            println!("        first mismatches (idx, rust, expected): {:?}", mismatches);
+            let mismatches: Vec<(usize, i32, i32)> = rust_decoded
+                .iter()
+                .zip(c.symbols.iter())
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(i, (a, b))| (i, *a, *b))
+                .take(5)
+                .collect();
+            println!(
+                "        first mismatches (idx, rust, expected): {:?}",
+                mismatches
+            );
             ok = false;
         }
         if rust_decoded == c.py_decoded_symbols {
@@ -100,9 +119,13 @@ fn main() {
         }
 
         // 2. INTEROP ENCODE: does Rust produce byte-IDENTICAL output to Python, not just same length?
-        let rust_encoded = encode_with_indexes(&c.symbols, &c.indexes, &c.cdfs, &c.cdf_lengths, &c.offsets);
+        let rust_encoded =
+            encode_with_indexes(&c.symbols, &c.indexes, &c.cdfs, &c.cdf_lengths, &c.offsets);
         if rust_encoded == c.py_bytes {
-            println!("  [PASS] rust encode() == python bytes, byte-for-byte ({} bytes)", rust_encoded.len());
+            println!(
+                "  [PASS] rust encode() == python bytes, byte-for-byte ({} bytes)",
+                rust_encoded.len()
+            );
         } else {
             println!(
                 "  [FAIL] rust encode() != python bytes (rust len={}, python len={})",
@@ -113,7 +136,13 @@ fn main() {
         }
 
         // 3. Rust self round-trip (sanity)
-        let self_decoded = decode_with_indexes(&rust_encoded, &c.indexes, &c.cdfs, &c.cdf_lengths, &c.offsets);
+        let self_decoded = decode_with_indexes(
+            &rust_encoded,
+            &c.indexes,
+            &c.cdfs,
+            &c.cdf_lengths,
+            &c.offsets,
+        );
         if self_decoded == c.symbols {
             println!("  [PASS] rust self round-trip (encode then decode)");
         } else {
@@ -124,7 +153,14 @@ fn main() {
         all_ok &= ok;
     }
 
-    println!("\n{}", if all_ok { "ALL CASES PASSED" } else { "SOME CASES FAILED" });
+    println!(
+        "\n{}",
+        if all_ok {
+            "ALL CASES PASSED"
+        } else {
+            "SOME CASES FAILED"
+        }
+    );
     if !all_ok {
         std::process::exit(1);
     }

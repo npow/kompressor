@@ -1,5 +1,9 @@
 <p align="center">
+  <a href="https://github.com/npow/kompressor/actions/workflows/ci.yml"><img src="https://github.com/npow/kompressor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/kompressor"><img src="https://img.shields.io/crates/v/kompressor.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/kompressor"><img src="https://img.shields.io/docsrs/kompressor" alt="docs.rs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://crates.io/crates/kompressor"><img src="https://img.shields.io/crates/d/kompressor.svg" alt="Downloads"></a>
 </p>
 
 <p align="center">

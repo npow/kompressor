@@ -49,7 +49,14 @@ fn load_data(path: &str) -> Data {
     pos += 4;
     let ref_bytes = buf[pos..pos + n_bytes].to_vec();
 
-    Data { symbols, indexes, cdfs, cdf_lengths, offsets, ref_bytes }
+    Data {
+        symbols,
+        indexes,
+        cdfs,
+        cdf_lengths,
+        offsets,
+        ref_bytes,
+    }
 }
 
 fn bench_one(label: &str, path: &str, chunk_counts: &[usize]) {
@@ -63,58 +70,125 @@ fn bench_one(label: &str, path: &str, chunk_counts: &[usize]) {
     );
 
     // ---- correctness: byte-exact interop against the real python-produced bytes ----
-    let encoded = encode_with_indexes(&data.symbols, &data.indexes, &data.cdfs, &data.cdf_lengths, &data.offsets);
+    let encoded = encode_with_indexes(
+        &data.symbols,
+        &data.indexes,
+        &data.cdfs,
+        &data.cdf_lengths,
+        &data.offsets,
+    );
     assert_eq!(
         encoded, data.ref_bytes,
         "{}: rust-encoded bytes differ from python reference bytes (byte content, not just length!)",
         label
     );
-    let decoded = decode_with_indexes(&encoded, &data.indexes, &data.cdfs, &data.cdf_lengths, &data.offsets);
+    let decoded = decode_with_indexes(
+        &encoded,
+        &data.indexes,
+        &data.cdfs,
+        &data.cdf_lengths,
+        &data.offsets,
+    );
     assert_eq!(decoded, data.symbols, "{}: roundtrip mismatch!", label);
-    let decoded_from_py_bytes = decode_with_indexes(&data.ref_bytes, &data.indexes, &data.cdfs, &data.cdf_lengths, &data.offsets);
-    assert_eq!(decoded_from_py_bytes, data.symbols, "{}: rust decode(python bytes) mismatch!", label);
-    println!("  correctness: byte-exact match vs python AND rust decodes python's own bytes correctly");
+    let decoded_from_py_bytes = decode_with_indexes(
+        &data.ref_bytes,
+        &data.indexes,
+        &data.cdfs,
+        &data.cdf_lengths,
+        &data.offsets,
+    );
+    assert_eq!(
+        decoded_from_py_bytes, data.symbols,
+        "{}: rust decode(python bytes) mismatch!",
+        label
+    );
+    println!(
+        "  correctness: byte-exact match vs python AND rust decodes python's own bytes correctly"
+    );
 
     let n_iters = 20;
     let t0 = Instant::now();
     for _ in 0..n_iters {
-        let _ = encode_with_indexes(&data.symbols, &data.indexes, &data.cdfs, &data.cdf_lengths, &data.offsets);
+        let _ = encode_with_indexes(
+            &data.symbols,
+            &data.indexes,
+            &data.cdfs,
+            &data.cdf_lengths,
+            &data.offsets,
+        );
     }
     let t_encode = t0.elapsed().as_secs_f64() / n_iters as f64 * 1000.0;
-    println!("  single-thread encode: {:.3} ms  ({:.2} ns/symbol)", t_encode, t_encode * 1e6 / data.symbols.len() as f64);
+    println!(
+        "  single-thread encode: {:.3} ms  ({:.2} ns/symbol)",
+        t_encode,
+        t_encode * 1e6 / data.symbols.len() as f64
+    );
 
     let t0 = Instant::now();
     for _ in 0..n_iters {
-        let _ = decode_with_indexes(&encoded, &data.indexes, &data.cdfs, &data.cdf_lengths, &data.offsets);
+        let _ = decode_with_indexes(
+            &encoded,
+            &data.indexes,
+            &data.cdfs,
+            &data.cdf_lengths,
+            &data.offsets,
+        );
     }
     let t_decode = t0.elapsed().as_secs_f64() / n_iters as f64 * 1000.0;
-    println!("  single-thread decode: {:.3} ms  ({:.2} ns/symbol)", t_decode, t_decode * 1e6 / data.symbols.len() as f64);
+    println!(
+        "  single-thread decode: {:.3} ms  ({:.2} ns/symbol)",
+        t_decode,
+        t_decode * 1e6 / data.symbols.len() as f64
+    );
 
     for &n_chunks in chunk_counts {
         let n = data.symbols.len();
         if n < n_chunks {
             continue;
         }
-        let chunk_size = (n + n_chunks - 1) / n_chunks;
+        let chunk_size = n.div_ceil(n_chunks);
         let sym_chunks: Vec<&[i32]> = data.symbols.chunks(chunk_size).collect();
         let idx_chunks: Vec<&[i32]> = data.indexes.chunks(chunk_size).collect();
 
         let t0 = Instant::now();
         let encoded_chunks: Vec<Vec<u8>> = (0..sym_chunks.len())
             .into_par_iter()
-            .map(|i| encode_with_indexes(sym_chunks[i], idx_chunks[i], &data.cdfs, &data.cdf_lengths, &data.offsets))
+            .map(|i| {
+                encode_with_indexes(
+                    sym_chunks[i],
+                    idx_chunks[i],
+                    &data.cdfs,
+                    &data.cdf_lengths,
+                    &data.offsets,
+                )
+            })
             .collect();
         let t_par_encode = t0.elapsed().as_secs_f64() * 1000.0;
 
         let t0 = Instant::now();
         let decoded_chunks: Vec<Vec<i32>> = (0..encoded_chunks.len())
             .into_par_iter()
-            .map(|i| decode_with_indexes(&encoded_chunks[i], idx_chunks[i], &data.cdfs, &data.cdf_lengths, &data.offsets))
+            .map(|i| {
+                decode_with_indexes(
+                    &encoded_chunks[i],
+                    idx_chunks[i],
+                    &data.cdfs,
+                    &data.cdf_lengths,
+                    &data.offsets,
+                )
+            })
             .collect();
         let t_par_decode = t0.elapsed().as_secs_f64() * 1000.0;
 
         for (i, dc) in decoded_chunks.iter().enumerate() {
-            assert_eq!(dc.as_slice(), sym_chunks[i], "{}: chunk {} mismatch at n_chunks={}", label, i, n_chunks);
+            assert_eq!(
+                dc.as_slice(),
+                sym_chunks[i],
+                "{}: chunk {} mismatch at n_chunks={}",
+                label,
+                i,
+                n_chunks
+            );
         }
 
         println!(
@@ -129,6 +203,10 @@ fn bench_one(label: &str, path: &str, chunk_counts: &[usize]) {
 }
 
 fn main() {
-    bench_one("y (GaussianConditional)", "data.bin", &[2, 4, 8, 16, 24, 32]);
+    bench_one(
+        "y (GaussianConditional)",
+        "data.bin",
+        &[2, 4, 8, 16, 24, 32],
+    );
     bench_one("z (EntropyBottleneck)", "data_z.bin", &[2, 4, 8, 16, 24]);
 }

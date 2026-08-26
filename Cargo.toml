@@ -2,8 +2,12 @@
 name = "kompressor"
 version = "0.1.0"
 edition = "2021"
-description = "Drop-in, byte-exact-compatible parallel rANS entropy coder for CompressAI's mean-scale hyperprior models (mbt2018_mean), ~60x faster than the reference Python/C++ implementation."
+description = "~60x faster, byte-exact rANS entropy coder for CompressAI mbt2018_mean"
 license = "MIT"
+repository = "https://github.com/npow/kompressor"
+readme = "README.md"
+keywords = ["rans", "entropy-coding", "compression", "codec", "compressai"]
+categories = ["compression", "encoding", "algorithms"]
 
 [dependencies]
 rayon = "1.10"

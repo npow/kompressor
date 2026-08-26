@@ -50,14 +50,26 @@ pub fn encode_with_indexes(
             }
             let mut val = n_bypass;
             while val >= MAX_BYPASS_VAL {
-                syms.push(RansSymbol { start: MAX_BYPASS_VAL as u16, range: (MAX_BYPASS_VAL + 1) as u16, bypass: true });
+                syms.push(RansSymbol {
+                    start: MAX_BYPASS_VAL as u16,
+                    range: (MAX_BYPASS_VAL + 1) as u16,
+                    bypass: true,
+                });
                 val -= MAX_BYPASS_VAL;
             }
-            syms.push(RansSymbol { start: val as u16, range: (val + 1) as u16, bypass: true });
+            syms.push(RansSymbol {
+                start: val as u16,
+                range: (val + 1) as u16,
+                bypass: true,
+            });
 
             for j in 0..n_bypass {
                 let val = (raw_val >> (j * BYPASS_PRECISION)) & MAX_BYPASS_VAL;
-                syms.push(RansSymbol { start: val as u16, range: (val + 1) as u16, bypass: true });
+                syms.push(RansSymbol {
+                    start: val as u16,
+                    range: (val + 1) as u16,
+                    bypass: true,
+                });
             }
         }
     }
@@ -179,4 +191,142 @@ pub fn decode_with_indexes(
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds a CompressAI-style quantized CDF row from integer frequencies that must
+    /// sum to exactly 1<<16. Returns (cdf, cdf_length, max_value).
+    fn build_cdf(freqs: &[i32]) -> (Vec<i32>, i32) {
+        assert_eq!(
+            freqs.iter().sum::<i32>(),
+            1 << 16,
+            "frequencies must sum to 65536"
+        );
+        let mut cdf = vec![0i32];
+        let mut acc = 0i32;
+        for &f in freqs {
+            acc += f;
+            cdf.push(acc);
+        }
+        let cdf_length = cdf.len() as i32;
+        (cdf, cdf_length)
+    }
+
+    fn roundtrip(
+        symbols: &[i32],
+        indexes: &[i32],
+        cdfs: &[Vec<i32>],
+        cdf_lengths: &[i32],
+        offsets: &[i32],
+    ) -> Vec<i32> {
+        let encoded = encode_with_indexes(symbols, indexes, cdfs, cdf_lengths, offsets);
+        decode_with_indexes(&encoded, indexes, cdfs, cdf_lengths, offsets)
+    }
+
+    #[test]
+    fn roundtrip_single_uniform_row() {
+        // 8 equally likely symbols, no outliers.
+        let (cdf, cdf_length) = build_cdf(&[8192; 8]);
+        let cdfs = vec![cdf];
+        let cdf_lengths = vec![cdf_length];
+        let offsets = vec![0];
+
+        let symbols: Vec<i32> = (0..8).cycle().take(200).collect();
+        let indexes = vec![0; symbols.len()];
+
+        let decoded = roundtrip(&symbols, &indexes, &cdfs, &cdf_lengths, &offsets);
+        assert_eq!(decoded, symbols);
+    }
+
+    #[test]
+    fn roundtrip_with_offset() {
+        // Same distribution, but symbols are centered around a nonzero mean via offset.
+        let (cdf, cdf_length) = build_cdf(&[8192; 8]);
+        let cdfs = vec![cdf];
+        let cdf_lengths = vec![cdf_length];
+        let offsets = vec![-50]; // symbol range becomes [-50, -43]
+
+        let symbols: Vec<i32> = (-50..=-43).cycle().take(100).collect();
+        let indexes = vec![0; symbols.len()];
+
+        let decoded = roundtrip(&symbols, &indexes, &cdfs, &cdf_lengths, &offsets);
+        assert_eq!(decoded, symbols);
+    }
+
+    #[test]
+    fn roundtrip_multiple_cdf_rows() {
+        // Simulates multiple quantized scale bins, each with its own distribution,
+        // the way GaussianConditional indexes per-symbol CDFs by scale bucket.
+        let (cdf_a, len_a) = build_cdf(&[32768, 32768]); // 2 symbols, sharply peaked-ish
+        let (cdf_b, len_b) = build_cdf(&[16384; 4]); // 4 symbols, uniform
+        let (cdf_c, len_c) = build_cdf(&[8192; 8]); // 8 symbols, uniform
+        let cdfs = vec![cdf_a, cdf_b, cdf_c];
+        let cdf_lengths = vec![len_a, len_b, len_c];
+        let offsets = vec![0, 0, 0];
+
+        let symbols = vec![0, 1, 0, 1, 2, 3, 0, 5, 7, 1, 0, 3, 2];
+        let indexes = vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 0, 1, 2];
+
+        let decoded = roundtrip(&symbols, &indexes, &cdfs, &cdf_lengths, &offsets);
+        assert_eq!(decoded, symbols);
+    }
+
+    #[test]
+    fn roundtrip_bypass_path_outliers() {
+        // Small max_value so it's easy to land symbols far outside [0, max_value],
+        // forcing the coder's bypass path (mirrors real Gaussian-conditional outliers).
+        let (cdf, cdf_length) = build_cdf(&[16384; 4]);
+        let cdfs = vec![cdf];
+        let cdf_lengths = vec![cdf_length];
+        let offsets = vec![0];
+
+        let symbols = vec![0, 1, 2, 3, 1000, -1000, 50_000, -50_000, 2, 0];
+        let indexes = vec![0; symbols.len()];
+
+        let decoded = roundtrip(&symbols, &indexes, &cdfs, &cdf_lengths, &offsets);
+        assert_eq!(decoded, symbols);
+    }
+
+    #[test]
+    fn roundtrip_empty() {
+        let decoded = roundtrip(&[], &[], &[], &[], &[]);
+        assert_eq!(decoded, Vec::<i32>::new());
+    }
+
+    #[test]
+    fn roundtrip_large_random() {
+        // Deterministic pseudo-random stream (no external RNG dependency), covering many
+        // symbols across a distribution wide enough to mix normal and bypass-path values.
+        let (cdf, cdf_length) = build_cdf(&[4096; 16]);
+        let cdfs = vec![cdf];
+        let cdf_lengths = vec![cdf_length];
+        let offsets = vec![0];
+
+        let mut state: u64 = 0x1234_5678_9abc_def0;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        let n = 10_000;
+        let symbols: Vec<i32> = (0..n)
+            .map(|_| {
+                let r = next() % 1000;
+                match r {
+                    0..=979 => (next() % 16) as i32,     // normal path
+                    980..=989 => (next() % 5000) as i32, // positive outlier -> bypass
+                    _ => -((next() % 5000) as i32),      // negative outlier -> bypass
+                }
+            })
+            .collect();
+        let indexes = vec![0; symbols.len()];
+
+        let decoded = roundtrip(&symbols, &indexes, &cdfs, &cdf_lengths, &offsets);
+        assert_eq!(decoded, symbols);
+    }
 }
