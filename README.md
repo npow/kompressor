@@ -2,13 +2,13 @@
 
 Byte-exact Rust replacement for CompressAI's entropy coder (`mbt2018_mean` and other mean-scale hyperprior codecs). Same algorithm, identical compressed output, ~56x faster.
 
-At 1080p, CompressAI's reference Python/C++ entropy coder is ~90% of total codec latency. The neural net is ~10%. This crate replaces just the coder. No retraining, no compression-ratio change, no architecture work.
+At 1080p, CompressAI's reference Python/C++ entropy coder is ~90% of total codec latency. The neural net is ~10%. kompressor replaces just the coder. No retraining, no compression-ratio change, no architecture work.
 
 ## Numbers
 
 RTX PRO 6000 Blackwell, 24 cores, real `mbt2018_mean` (quality=3) weights, 1920x1080.
 
-| | reference (Python/C++) | this crate, 1 thread | this crate, 24 threads |
+| | reference (Python/C++) | kompressor, 1 thread | kompressor, 24 threads |
 |---|---:|---:|---:|
 | encode `y` (1.57M symbols) | ~68 ms | 18.4 ms | 2.3-2.8 ms |
 | decode `y` | ~100 ms | 22.3 ms | 1.7-2.1 ms |
