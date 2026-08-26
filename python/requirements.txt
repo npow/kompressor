@@ -1,0 +1,4 @@
+# Install torch separately first, matching your GPU's CUDA compute capability, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# (cu128 is required for Blackwell-generation GPUs; older cards can use cu121 etc.)
+compressai>=1.2.6

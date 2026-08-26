@@ -1,0 +1,6 @@
+/target
+*.bin
+python/.venv
+python/__pycache__
+__pycache__
+*.pyc
