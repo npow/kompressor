@@ -9,8 +9,16 @@ readme = "README.md"
 keywords = ["rans", "entropy-coding", "compression", "codec", "compressai"]
 categories = ["compression", "encoding", "algorithms"]
 
+[lib]
+name = "kompressor"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 rayon = "1.10"
+pyo3 = { version = "0.29", optional = true, features = ["extension-module"] }
+
+[features]
+python = ["dep:pyo3"]
 
 [profile.release]
 opt-level = 3

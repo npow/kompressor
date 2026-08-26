@@ -94,6 +94,8 @@ Checks byte-exact interop against real CompressAI output across 5 cases, includi
 
 ```
 src/coder.rs                    core rANS encode/decode
+src/mask.rs                     mask-as-side-info codec (RLE + raw-bitpacked fallback)
+src/python.rs                   PyO3 bindings (feature = "python"), zero-tolist() marshaling
 src/bin/test_vectors.rs         correctness harness
 python/thin_model.py            MobileNet-style thinned model, for comparison
 python/bench*.py                latency breakdown, marshaling cost, GIL/IPC dead ends
@@ -101,13 +103,56 @@ python/export_*.py              generates data.bin / test_vectors.bin from real 
 python/BENCHMARKS.md            full investigation writeup
 ```
 
+## Python bindings
+
+`cargo build --release --features python` builds a `cdylib` PyO3 extension module
+(`target/release/libkompressor.so`) alongside the normal CLI/library build — the `python`
+feature is off by default, so plain `cargo build`/`cargo test`/the benchmark binaries never
+pull in pyo3 or link against a Python interpreter. Point `PYO3_PYTHON` at the interpreter you'll
+import it from (ABI must match), then rename/copy the build output to the extension-suffix name
+that interpreter expects (`python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"`)
+and add its directory to `sys.path`:
+
+```console
+$ PYO3_PYTHON=/path/to/venv/bin/python3 cargo build --release --features python
+$ cp target/release/libkompressor.so target/release/kompressor$(/path/to/venv/bin/python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+```
+
+```python
+import sys; sys.path.insert(0, ".../kompressor/target/release")
+import kompressor, numpy as np
+
+tables = kompressor.CodecTables(cdf_flat, row_width, cdf_lengths, offsets)  # once per model
+encoded = tables.encode(symbols, indexes)                                   # bytes, byte-exact vs compressai
+decoded = np.frombuffer(tables.decode(encoded, indexes), dtype=np.int32)    # zero-copy on both sides
+
+mask_bytes = kompressor.encode_mask_py(mask.astype(np.uint8))
+mask = np.frombuffer(kompressor.decode_mask_py(mask_bytes), dtype=np.uint8).astype(bool)
+```
+
+Arrays cross the FFI boundary via the buffer protocol (`PyBuffer<T>`), not `.tolist()` — see
+`src/python.rs`'s module docs for why that distinction matters at this crate's whole reason for
+existing.
+
+## Masked/sparse entropy coding
+
+`encode_with_indexes`/`decode_with_indexes` were already positionally decoupled (no change
+needed): a sender can filter `symbols`/`indexes` down to any kept subset before calling `encode`,
+and the coder has no idea entries were skipped. What was missing was telling the receiver *which*
+positions were kept so it can scatter decoded values back into the full-size tensor — that's
+`src/mask.rs`'s `encode_mask`/`decode_mask` (RLE for the common spatially-correlated case, a
+raw-bitpacked fallback so an adversarial/random mask is never worse than 1 bit/entry + a 9-byte
+header). See that module's doc comment for the exact wire format and `cargo test` for round-trip
+coverage (empty/all-kept/all-discarded/single-pixel/clustered/random/non-byte-aligned).
+
 ## Contributing
 
 The highest-impact contributions right now:
 
-1. **PyO3 bindings** — call kompressor directly from Python instead of exporting to intermediate files
+1. ~~**PyO3 bindings**~~ — done, see above (`src/python.rs`, `--features python`)
 2. **Integrated end-to-end benchmark** — one measured run instead of summed GPU + Rust components
-3. **Masked/sparse entropy coding** — skip discarded regions entirely instead of coding the full tensor
+3. ~~**Masked/sparse entropy coding**~~ — the side-info half is done, see above (`src/mask.rs`); an
+   end-to-end sparse-coded benchmark (vs. today's dense-only `bench_one`) is still open
 4. **Broader CompressAI coverage** — the coder is generic to `EntropyBottleneck`/`GaussianConditional`; validate against other zoo models beyond `mbt2018_mean`
 
 ## Credits
