@@ -120,6 +120,9 @@ pub fn decode_with_indexes(
     cdf_lengths: &[i32],
     offsets: &[i32],
 ) -> Vec<i32> {
+    // allow(unknown_lints) needed too: chunks_exact_to_as_chunks doesn't exist on older
+    // clippy, and -D warnings would otherwise fail on the unrecognized lint name itself.
+    #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
     let words: Vec<u32> = encoded
         .chunks_exact(4)
         .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
